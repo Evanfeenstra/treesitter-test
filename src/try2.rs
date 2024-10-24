@@ -8,9 +8,12 @@ use tree_sitter::*;
 #[derive(Default, Serialize, Deserialize, Debug)]
 struct Thing {
     kind: Kind,
+    #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     text: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     children: Vec<Thing>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     relations: Vec<String>, // Simplified relation representation
 }
 
@@ -47,28 +50,43 @@ enum Kind {
     Tuple,
     Array,
     FunctionCall,
+    Undefined,
 }
 
 impl FromStr for Kind {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "source_file" => Ok(Kind::Root),
-            "line_comment" => Ok(Kind::Comment),
-            "import" => Ok(Kind::Import),
-            "struct_item" => Ok(Kind::Struct),
-            "enum_item" => Ok(Kind::Enum),
-            "attribute_item" => Ok(Kind::Derive),
-            "function_item" => Ok(Kind::Function),
-            "impl_item" => Ok(Kind::Impl),
-
-            _ => Err(()),
-        }
+        Ok(match s {
+            "source_file" => Kind::Root,
+            "line_comment" => Kind::Comment,
+            "import" => Kind::Import,
+            "struct_item" => Kind::Struct,
+            "enum_item" => Kind::Enum,
+            "attribute_item" => Kind::Derive,
+            "function_item" => Kind::Function,
+            "impl_item" => Kind::Impl,
+            "field_declaration" => Kind::Field,
+            "let_declaration" => Kind::Variable,
+            "type_item" => Kind::Type,
+            "trait_item" => Kind::Trait,
+            "if_expression" => Kind::If,
+            "else_clause" => Kind::Else,
+            "loop_expression" => Kind::Loop,
+            "tuple_expression" => Kind::Tuple,
+            "array_expression" => Kind::Array,
+            "call_expression" => Kind::FunctionCall,
+            _ => Kind::Undefined,
+        })
     }
 }
 impl Default for Kind {
     fn default() -> Self {
         Kind::Comment
+    }
+}
+impl Kind {
+    fn is_undefined(&self) -> bool {
+        matches!(self, Kind::Undefined)
     }
 }
 
@@ -88,49 +106,43 @@ impl ASTConversionService {
     }
     fn generate_ast_with_relations(&self) -> String {
         let mut ast_root = Thing::new(Kind::Root, "Root".to_string());
-        self.build_ast(0, self.tree.root_node(), &mut ast_root);
+        self.build_ast(self.tree.root_node(), &mut ast_root);
         // Convert AST to JSON
         let json_ast = json!(ast_root);
         serde_json::to_string_pretty(&json_ast).unwrap()
     }
-    fn build_ast(&self, level: u64, node: Node, parent: &mut Thing) {
-        let lvl_prnt = 4;
-        let kind_prnt = Kind::Root;
-        let space = " ".repeat((level * 2) as usize);
-        if level <= lvl_prnt {
-            println!("{} {}: {}", space, level, node.kind());
-            let body = self.node_text(node);
-            // let namey = astring(node.child_by_field_name("name"));
-            println!("          ·{}·", &body[0..cmp::min(18, body.len())]);
+    fn add_parent_name(name: &str, parent: &mut Thing) {
+        if parent.name.is_none() {
+            parent.name = Some(name.to_string());
         }
-        if let Some(_) = node.child_by_field_name("name") {
-            //
-        };
+    }
+    fn parent_namer(node_kind: &str, body: &str, parent: &mut Thing) {
+        if node_kind == "type_identifier" {
+            Self::add_parent_name(&body, parent);
+        } else if node_kind == "identifier" {
+            Self::add_parent_name(&body, parent);
+        }
+    }
+    fn build_ast(&self, node: Node, parent: &mut Thing) {
         let node_kind = node.kind().to_string();
-        let is_parents_name = node_kind == "type_identifier";
-        if is_parents_name {
-            parent.name = Some(self.node_text(node).to_string());
-        }
+        let body = self.node_text(node);
+        Self::parent_namer(&node_kind, &body, parent);
         if let Ok(kind) = Kind::from_str(&node_kind) {
-            let mut element = Thing::new(kind, self.node_text(node));
-            // Simplified relation handling (e.g., function to method, struct to field)
-            if node.child_count() > 0 {
-                for child in node.children(&mut node.walk()) {
-                    self.build_ast(level + 1, child, &mut element);
-                    element
-                        .relations
-                        .push(format!("{:?} -> {:?}", parent.kind, element.kind));
-                }
+            let mut element = Thing::new(kind, body);
+            for child in node.children(&mut node.walk()) {
+                self.build_ast(child, &mut element);
             }
-            parent.children.push(element);
-        } else {
-            if level == lvl_prnt {
-                // println!("               ...")
+            if !element.kind.is_undefined() {
+                // element
+                //     .relations
+                //     .push(format!("{:?} -> {:?}", parent.kind, element.kind));
+                parent.children.push(element);
             }
         }
     }
     fn node_text(&self, node: Node) -> String {
-        self.code[node.byte_range()].to_string()
+        let txt = self.code[node.byte_range()].to_string();
+        txt[0..std::cmp::min(24, txt.len())].to_string()
     }
 }
 
@@ -149,5 +161,5 @@ fn main() {
     let service = ASTConversionService::new(code);
 
     let ast_json = service.generate_ast_with_relations();
-    // println!("{}", ast_json);
+    println!("{}", ast_json);
 }
