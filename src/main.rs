@@ -19,12 +19,7 @@ impl ASTConversionService {
         let tree = parser.parse(&code, None).expect("Failed to parse code");
         ASTConversionService { code, tree }
     }
-    fn gen_json(&self) -> Value {
-        let root_node = self.tree.root_node();
-        let mut j = json!({});
-        for child in root_node.children(&mut root_node.walk()) {}
-        j
-    }
+
     fn generate_json(&self) -> Value {
         let root_node = self.tree.root_node();
         json!({
@@ -41,6 +36,7 @@ impl ASTConversionService {
             "schemas": self.extract_schema(root_node),
         })
     }
+
     fn extract_imports(&self, node: Node) -> Vec<Value> {
         let mut imports = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -52,6 +48,7 @@ impl ASTConversionService {
         }
         imports
     }
+
     fn extract_functions(&self, node: Node) -> Vec<Value> {
         let mut functions = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -73,6 +70,7 @@ impl ASTConversionService {
         }
         functions
     }
+
     fn extract_parameters(&self, function_node: Node) -> Vec<Value> {
         let mut parameters = Vec::new();
         if let Some(parameters_node) = function_node.child_by_field_name("parameters") {
@@ -95,6 +93,7 @@ impl ASTConversionService {
         }
         parameters
     }
+
     fn extract_called_methods(&self, function_node: Node) -> Vec<Value> {
         let mut called_methods = Vec::new();
         for descendant in function_node.children(&mut function_node.walk()) {
@@ -109,6 +108,7 @@ impl ASTConversionService {
         }
         called_methods
     }
+
     fn extract_method_variables(&self, function_node: Node) -> Vec<Value> {
         let mut variables = Vec::new();
         for descendant in function_node.children(&mut function_node.walk()) {
@@ -124,6 +124,7 @@ impl ASTConversionService {
         }
         variables
     }
+
     fn extract_structs(&self, node: Node) -> Vec<Value> {
         let mut structs = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -140,6 +141,7 @@ impl ASTConversionService {
         }
         structs
     }
+
     fn extract_fields(&self, struct_node: Node) -> Vec<Value> {
         let mut fields = Vec::new();
         if let Some(body_node) = struct_node.child_by_field_name("body") {
@@ -156,6 +158,7 @@ impl ASTConversionService {
         }
         fields
     }
+
     fn extract_enums(&self, node: Node) -> Vec<Value> {
         let mut enums = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -171,6 +174,7 @@ impl ASTConversionService {
         }
         enums
     }
+
     fn extract_variants(&self, enum_node: Node) -> Vec<Value> {
         let mut variants = Vec::new();
         if let Some(body_node) = enum_node.child_by_field_name("body") {
@@ -183,6 +187,7 @@ impl ASTConversionService {
         }
         variants
     }
+
     fn extract_relations(&self, node: Node) -> Vec<Value> {
         let mut relations = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -218,6 +223,7 @@ impl ASTConversionService {
         }
         relations
     }
+
     fn extract_constants(&self, node: Node) -> Vec<Value> {
         let mut constants = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -233,6 +239,7 @@ impl ASTConversionService {
         }
         constants
     }
+
     fn extract_modules_and_impls(&self, node: Node) -> Vec<Value> {
         let mut modules = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -249,6 +256,7 @@ impl ASTConversionService {
         }
         modules
     }
+
     fn extract_metadata(&self, node: Node) -> Vec<Value> {
         let mut metadata = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -261,12 +269,10 @@ impl ASTConversionService {
         }
         metadata
     }
+
     fn extract_nested(&self, node: Node) -> Vec<Value> {
         let mut nested_items = Vec::new();
         for child in node.children(&mut node.walk()) {
-            println!("===> child.kind() = {}", child.kind());
-            // match child.kind() {
-            // "mod_item" | "impl_item" | "function_item" | "struct_item" | "fn" => {
             if let Some(name_node) = child.child_by_field_name("name") {
                 nested_items.push(json!({
                     "type": child.kind(),
@@ -275,17 +281,12 @@ impl ASTConversionService {
                 }));
             } else {
                 let new_nested_items = self.extract_nested(child);
-                // nested_items.push(json!({
-                //     "type": child.kind(),
-                //     "children": self.extract_nested(child),
-                // }));
+                nested_items.extend(new_nested_items);
             }
-            // }
-            // _ => {}
-            // }
         }
         nested_items
     }
+
     fn extract_globals(&self, node: Node) -> Vec<Value> {
         let mut globals = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -301,6 +302,7 @@ impl ASTConversionService {
         }
         globals
     }
+
     fn extract_schema(&self, node: Node) -> Vec<Value> {
         let mut schemas = Vec::new();
         for child in node.children(&mut node.walk()) {
@@ -308,7 +310,6 @@ impl ASTConversionService {
                 let struct_name = self.node_text(child.child_by_field_name("name").unwrap());
                 let attributes = self.extract_metadata(child);
                 let fields = self.extract_fields(child);
-                // Extract relationships based on field attributes or annotations
                 let relationships = fields
                     .iter()
                     .filter_map(|field| {
@@ -336,6 +337,7 @@ impl ASTConversionService {
         }
         schemas
     }
+
     fn node_text(&self, node: Node) -> String {
         self.code[node.byte_range()].to_string()
     }
@@ -353,6 +355,5 @@ fn main() {
     let service = ASTConversionService::new(code);
     let json_output = service.generate_json();
 
-    // Pretty-print the JSON output
     println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
 }
